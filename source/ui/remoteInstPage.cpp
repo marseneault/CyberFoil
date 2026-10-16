@@ -48,7 +48,7 @@ namespace {
     constexpr u64 kListPageRepeatMs = 120;
     constexpr u64 kListPageFastAfterMs = 1500;
     constexpr u64 kListPageFastRepeatMs = 50;
-    constexpr u64 kListHoldPageAfterMs = 1000;
+    constexpr u64 kListHoldPageAfterMs = 2000;
     constexpr int kListMarqueeSpeedPxPerSec = 72;
     constexpr int kListMarqueePhasePause = 0;
     constexpr int kListMarqueePhaseScroll = 1;
