@@ -95,7 +95,7 @@ namespace inst::ui {
             std::string searchQuery;
             std::string previewKey;
             bool debugVisible = false;
-            int allSortMode = 0;
+            int allSortMode = 3; // Date New-Old
             bool descriptionVisible = false;
             bool descriptionOverlayVisible = false;
             std::vector<std::string> descriptionOverlayLines;
@@ -136,6 +136,9 @@ namespace inst::ui {
             int holdDirection = 0;
             u64 holdStartTick = 0;
             u64 lastHoldTick = 0;
+            int pageHoldDirection = 0;
+            u64 pageHoldStartTick = 0;
+            u64 pageLastHoldTick = 0;
             int listMarqueeIndex = -1;
             int listVisibleTopIndex = 0;
             int listPrevSelectedIndex = -1;
@@ -207,6 +210,8 @@ namespace inst::ui {
             std::string getAllSortModeLabel() const;
             const char* getBrowseSortLabel() const;
             void applyBrowseSort();
+            void stepListSelection(int direction, int steps, bool playClick);
+            void handleListPageInput(u64 Down, u64 Held);
             void openSearchDialog();
             void openSortDialog();
             void drawMenuItems(bool clearItems);
