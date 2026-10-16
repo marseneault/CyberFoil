@@ -2172,6 +2172,13 @@ namespace inst::ui {
         this->remoteSections.insert(this->remoteSections.begin(), std::move(installedSection));
     }
 
+    const std::string& remoteInstPage::getCachedBaseTitleName(std::uint64_t baseId) {
+        auto it = this->baseTitleNameCache.find(baseId);
+        if (it != this->baseTitleNameCache.end())
+            return it->second;
+        return this->baseTitleNameCache.emplace(baseId, tin::util::GetTitleName(baseId, NcmContentMetaType_Application)).first->second;
+    }
+
     bool remoteInstPage::ensureInstalledSectionBuilt() {
         this->ensureInstalledSectionPlaceholder();
         if (this->installedSnapshot.installedSectionBuilt)
@@ -2194,7 +2201,8 @@ namespace inst::ui {
 
         for (const auto baseId : this->installedSnapshot.installedBaseIds) {
             remoteInstStuff::RemoteItem baseItem;
-            baseItem.name = tin::util::GetTitleName(baseId, NcmContentMetaType_Application);
+            const std::string& baseName = this->getCachedBaseTitleName(baseId);
+            baseItem.name = baseName;
             baseItem.url = "";
             baseItem.size = 0;
             baseItem.titleId = baseId;
@@ -2216,7 +2224,8 @@ namespace inst::ui {
                         item.appVersion = list[j].version;
                         item.hasAppVersion = true;
                         item.appType = list[j].meta_type;
-                        item.name = tin::util::GetTitleName(item.titleId, static_cast<NcmContentMetaType>(item.appType));
+                        // Same suffixes as tin::util::GetTitleName, without re-reading the base's control data.
+                        item.name = baseName + (item.appType == NcmContentMetaType_Patch ? " (Update)" : " (DLC)");
                         item.url = "";
                         item.size = 0;
                         installedItems.push_back(item);
@@ -4236,8 +4245,9 @@ namespace inst::ui {
             previousSectionId = this->remoteSections[static_cast<std::size_t>(previousSectionIndex)].id;
 
         this->installedSnapshot = {};
+        // The Installed section is rebuilt lazily by drawMenuItems when it is shown; building it
+        // here stalled the return from every install for seconds.
         this->ensureInstalledSectionPlaceholder();
-        (void)this->ensureInstalledSectionBuilt();
         this->cacheAvailableUpdates();
         this->filterOwnedSections();
         this->applyAllSectionSort();

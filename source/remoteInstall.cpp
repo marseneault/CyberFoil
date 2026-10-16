@@ -2855,7 +2855,7 @@ namespace remoteInstStuff {
                 std::string audioPath = "romfs:/audio/bark.wav";
                 if (!inst::config::soundEnabled) audioPath = "";
                 if (std::filesystem::exists(inst::config::appDir + "/bark.wav")) audioPath = inst::config::appDir + "/bark.wav";
-                std::thread audioThread(inst::util::playAudio, audioPath);
+                inst::util::playAudioDetached(audioPath);
                 std::string lowerError = errorText;
                 std::transform(lowerError.begin(), lowerError.end(), lowerError.begin(), [](unsigned char c) { return std::tolower(c); });
                 const bool googleApiKeyRequired = currentGoogleDriveWithoutApiKey &&
@@ -2872,7 +2872,6 @@ namespace remoteInstStuff {
                     ? userMessage
                     : userMessage + "\n\nIndex source: " + currentIndexSourceUrl;
                 inst::ui::mainApp->CreateShowDialog("inst.info_page.failed"_lang + failedName + "!", messageWithSource, {"common.ok"_lang}, true);
-                audioThread.join();
             }
             nspInstalled = false;
         }
@@ -2892,12 +2891,12 @@ namespace remoteInstStuff {
             std::string audioPath = "romfs:/audio/success.wav";
             if (!inst::config::soundEnabled) audioPath = "";
             if (std::filesystem::exists(inst::config::appDir + "/success.wav")) audioPath = inst::config::appDir + "/success.wav";
-            std::thread audioThread(inst::util::playAudio, audioPath);
+            // Do not hold the install worker (and the UI) until the 4.7 s jingle finishes.
+            inst::util::playAudioDetached(audioPath);
             if (completedCount > 1)
                 inst::ui::mainApp->CreateShowDialog(std::to_string(completedCount) + "inst.info_page.desc0"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
             else
                 inst::ui::mainApp->CreateShowDialog(currentName + "inst.info_page.desc1"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
-            audioThread.join();
         }
 
         LOG_DEBUG("Done");

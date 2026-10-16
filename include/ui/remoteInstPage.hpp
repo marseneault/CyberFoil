@@ -74,6 +74,9 @@ namespace inst::ui {
                 std::vector<std::uint64_t> installedBaseIds;
             };
             InstalledSnapshot installedSnapshot;
+            // Base title names survive snapshot rebuilds: each lookup reads ~144 KiB of control data.
+            std::unordered_map<std::uint64_t, std::string> baseTitleNameCache;
+            const std::string& getCachedBaseTitleName(std::uint64_t baseId);
             bool nativeUpdatesSectionPresent = false;
             bool nativeDlcSectionPresent = false;
             bool saveSyncEnabled = false;
