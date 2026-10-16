@@ -22,6 +22,10 @@ namespace inst::theme {
     // Scroll a menu by one visible page (direction > 0 = down), keeping the cursor on the
     // same screen row, with a single re-render. Returns false when already at the edge.
     bool PageMenu(pu::ui::elm::Menu& menu, int direction);
+    // Index of the first visible row.
+    s32 GetMenuTop(pu::ui::elm::Menu& menu);
+    // Select an item and show the view starting at `top` (both clamped).
+    void SetMenuPosition(pu::ui::elm::Menu& menu, s32 selected, s32 top);
 
     // Apply focus text colors without modifying the bundled Plutonium library.
     class Menu : public pu::ui::elm::Menu {

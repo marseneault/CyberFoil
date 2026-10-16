@@ -35,6 +35,27 @@ namespace {
 }
 
 namespace inst::theme {
+    s32 GetMenuTop(pu::ui::elm::Menu& menu) {
+        return menu.*Get(MenuFirstVisible{});
+    }
+
+    void SetMenuPosition(pu::ui::elm::Menu& menu, s32 selected, s32 top) {
+        const s32 count = static_cast<s32>(menu.GetItems().size());
+        if (count == 0)
+            return;
+        const s32 pageSize = std::max<s32>(1, menu.GetNumberOfItemsToShow());
+        selected = std::clamp<s32>(selected, 0, count - 1);
+        // Keep the selection on screen, and never leave empty rows below the last item.
+        top = std::clamp<s32>(top, std::max<s32>(0, selected - pageSize + 1), selected);
+        top = std::clamp<s32>(top, 0, std::max<s32>(0, count - pageSize));
+        menu.SetSelectedIndex(selected);
+        s32& first = menu.*Get(MenuFirstVisible{});
+        if (first != top) {
+            first = top;
+            (menu.*Get(MenuReloadRenders{}))();
+        }
+    }
+
     bool PageMenu(pu::ui::elm::Menu& menu, int direction) {
         const s32 count = static_cast<s32>(menu.GetItems().size());
         if (count == 0 || direction == 0)

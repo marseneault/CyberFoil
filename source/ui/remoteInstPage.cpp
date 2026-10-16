@@ -48,6 +48,7 @@ namespace {
     constexpr u64 kListPageRepeatMs = 120;
     constexpr u64 kListPageFastAfterMs = 1500;
     constexpr u64 kListPageFastRepeatMs = 50;
+    constexpr u64 kListHoldPageAfterMs = 1000;
     constexpr int kListMarqueeSpeedPxPerSec = 72;
     constexpr int kListMarqueePhasePause = 0;
     constexpr int kListMarqueePhaseScroll = 1;
@@ -4240,6 +4241,12 @@ namespace inst::ui {
 
         const bool wasGridMode = this->remoteGridMode;
         const int previousSectionIndex = this->selectedSectionIndex;
+        // Remember the cursor (by item URL) and the scroll position to restore after the rebuild.
+        const int previousItemIndex = wasGridMode ? this->remoteGridIndex : this->menu->GetSelectedIndex();
+        const int previousTop = wasGridMode ? 0 : inst::theme::GetMenuTop(*this->menu);
+        std::string previousItemUrl;
+        if (previousItemIndex >= 0 && previousItemIndex < static_cast<int>(this->visibleItems.size()))
+            previousItemUrl = this->visibleItems[static_cast<std::size_t>(previousItemIndex)].url;
         std::string previousSectionId;
         if (previousSectionIndex >= 0 && previousSectionIndex < static_cast<int>(this->remoteSections.size()))
             previousSectionId = this->remoteSections[static_cast<std::size_t>(previousSectionIndex)].id;
@@ -4253,10 +4260,12 @@ namespace inst::ui {
         this->applyAllSectionSort();
 
         int nextSectionIndex = 0;
+        bool sameSection = false;
         if (!previousSectionId.empty()) {
             for (std::size_t i = 0; i < this->remoteSections.size(); i++) {
                 if (this->remoteSections[i].id == previousSectionId) {
                     nextSectionIndex = static_cast<int>(i);
+                    sameSection = true;
                     break;
                 }
             }
@@ -4276,8 +4285,27 @@ namespace inst::ui {
         this->updateButtonsText();
         this->drawMenuItems(false);
         this->infoImage->SetVisible(false);
-        if (!this->remoteGridMode) {
-            this->menu->SetSelectedIndex(0);
+
+        int restoredIndex = 0;
+        if (sameSection && !this->visibleItems.empty()) {
+            restoredIndex = std::clamp(previousItemIndex, 0, static_cast<int>(this->visibleItems.size()) - 1);
+            if (!previousItemUrl.empty()) {
+                for (std::size_t i = 0; i < this->visibleItems.size(); i++) {
+                    if (this->visibleItems[i].url == previousItemUrl) {
+                        restoredIndex = static_cast<int>(i);
+                        break;
+                    }
+                }
+            }
+        }
+        if (this->remoteGridMode) {
+            if (restoredIndex != 0) {
+                this->remoteGridIndex = restoredIndex;
+                this->updateRemoteGrid();
+            }
+        } else {
+            // Same screen row as before; SetMenuPosition clamps when the list got shorter.
+            inst::theme::SetMenuPosition(*this->menu, restoredIndex, restoredIndex - (previousItemIndex - previousTop));
             this->menu->SetVisible(true);
             this->updatePreview();
         }
@@ -4968,7 +4996,17 @@ namespace inst::ui {
                     const u64 freq = armGetSystemTickFreq();
                     const u64 delayTicks = (freq * 300) / 1000;
                     const u64 repeatTicks = (freq * 70) / 1000;
-                    if (now - this->holdStartTick >= delayTicks && now - this->lastHoldTick >= repeatTicks) {
+                    const u64 heldTicks = now - this->holdStartTick;
+                    if (heldTicks >= (freq * kListHoldPageAfterMs) / 1000) {
+                        // Held long enough: switch from rows to whole pages, accelerating like Left/Right.
+                        const u64 pageRepeatMs = heldTicks >= (freq * (kListHoldPageAfterMs + kListPageFastAfterMs)) / 1000
+                            ? kListPageFastRepeatMs : kListPageRepeatMs;
+                        if (now - this->lastHoldTick >= (freq * pageRepeatMs) / 1000) {
+                            if (inst::theme::PageMenu(*this->menu, direction))
+                                inst::util::playNavigationClick();
+                            this->lastHoldTick = now;
+                        }
+                    } else if (heldTicks >= delayTicks && now - this->lastHoldTick >= repeatTicks) {
                         int currentIndex = this->menu->GetSelectedIndex();
                         int maxIndex = static_cast<int>(this->menu->GetItems().size()) - 1;
                         bool moved = false;

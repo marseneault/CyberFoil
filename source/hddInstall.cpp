@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include <cstring>
 #include <algorithm>
 #include <sstream>
@@ -136,8 +137,10 @@ namespace hddInstStuff {
                 std::string audioPath = "romfs:/audio/bark.wav";
                 if (!inst::config::soundEnabled) audioPath = "";
                 if (std::filesystem::exists(inst::config::appDir + "/bark.wav")) audioPath = inst::config::appDir + "/bark.wav";
-                std::thread audioThread(inst::util::playAudio, audioPath);
+                std::atomic<bool> stopAudio{false};
+                std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
                 inst::ui::mainApp->CreateShowDialog("inst.info_page.failed"_lang + failedName + "!", inst::diag::BuildUserMessage(failure), {"common.ok"_lang}, true);
+                stopAudio.store(true, std::memory_order_release); // Dialog closed: cut the sound.
                 audioThread.join();
             } else {
                 inst::ui::mainApp->CreateShowDialog("Canceled", inst::diag::BuildUserMessage(failure), {"common.ok"_lang}, true);
@@ -159,7 +162,8 @@ namespace hddInstStuff {
             std::string audioPath = "romfs:/audio/success.wav";
             if (!inst::config::soundEnabled) audioPath = "";
             if (std::filesystem::exists(inst::config::appDir + "/success.wav")) audioPath = inst::config::appDir + "/success.wav";
-            std::thread audioThread(inst::util::playAudio, audioPath);
+            std::atomic<bool> stopAudio{false};
+            std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
             if (ourTitleList.size() > 1) {
                 if (inst::config::deletePrompt) {
                     if (inst::ui::mainApp->CreateShowDialog(std::to_string(ourTitleList.size()) + "inst.hdd.delete_info_multi"_lang, "inst.hdd.delete_desc"_lang, {"common.no"_lang, "common.yes"_lang}, false) == 1) {
@@ -185,6 +189,7 @@ namespace hddInstStuff {
                     inst::ui::mainApp->CreateShowDialog(inst::util::shortenString(ourTitleList[0].filename().string(), 42, true) + "inst.info_page.desc1"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
                 } else inst::ui::mainApp->CreateShowDialog(inst::util::shortenString(ourTitleList[0].filename().string(), 42, true) + "inst.info_page.desc1"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
             }
+            stopAudio.store(true, std::memory_order_release); // Dialog closed: cut the sound.
             audioThread.join();
         }
 

@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include "install/install_nsp.hpp"
 
 #include <machine/endian.h>
@@ -120,8 +121,10 @@ namespace tin::install::nsp
                     std::string audioPath = "romfs:/audio/bark.wav";
                     if (!inst::config::soundEnabled) audioPath = "";
                     if (std::filesystem::exists(inst::config::appDir + "/bark.wav")) audioPath = inst::config::appDir + "/bark.wav";
-                    std::thread audioThread(inst::util::playAudio,audioPath);
+                    std::atomic<bool> stopAudio{false};
+                    std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
                     int rc = inst::ui::mainApp->CreateShowDialog("inst.nca_verify.title"_lang, "inst.nca_verify.desc"_lang, {"common.cancel"_lang, "inst.nca_verify.opt1"_lang}, false);
+                    stopAudio.store(true, std::memory_order_release); // Dialog closed: cut the sound.
                     audioThread.join();
                     if (rc != 1)
                         THROW_FORMAT(("inst.nca_verify.error"_lang + tin::util::GetNcaIdString(ncaId)).c_str());

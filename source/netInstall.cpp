@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include <cstring>
 #include <sys/socket.h>
 #include <sys/errno.h>
@@ -224,8 +225,10 @@ namespace netInstStuff{
                 std::string audioPath = "romfs:/audio/bark.wav";
                 if (!inst::config::soundEnabled) audioPath = "";
                 if (std::filesystem::exists(inst::config::appDir + "/bark.wav")) audioPath = inst::config::appDir + "/bark.wav";
-                std::thread audioThread(inst::util::playAudio,audioPath);
+                std::atomic<bool> stopAudio{false};
+                std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
                 inst::ui::mainApp->CreateShowDialog("inst.info_page.failed"_lang + failedName + "!", inst::diag::BuildUserMessage(failure), {"common.ok"_lang}, true);
+                stopAudio.store(true, std::memory_order_release); // Dialog closed: cut the sound.
                 audioThread.join();
             }
             nspInstalled = false;
@@ -248,9 +251,11 @@ namespace netInstStuff{
             std::string audioPath = "romfs:/audio/success.wav";
             if (!inst::config::soundEnabled) audioPath = "";
             if (std::filesystem::exists(inst::config::appDir + "/success.wav")) audioPath = inst::config::appDir + "/success.wav";
-            std::thread audioThread(inst::util::playAudio,audioPath);
+            std::atomic<bool> stopAudio{false};
+            std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
             if (completedCount > 1) inst::ui::mainApp->CreateShowDialog(std::to_string(completedCount) + "inst.info_page.desc0"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
             else inst::ui::mainApp->CreateShowDialog(currentName + "inst.info_page.desc1"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
+            stopAudio.store(true, std::memory_order_release); // Dialog closed: cut the sound.
             audioThread.join();
         }
         
