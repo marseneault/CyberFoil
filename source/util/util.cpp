@@ -6,8 +6,7 @@
 #include <curl/curl.h>
 #include <regex>
 #include <mutex>
-#include <system_error>
-#include <thread>
+#include <atomic>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include "switch.h"
@@ -391,17 +390,11 @@ namespace inst::util {
         ensureNavigationClickAudioReadyLocked(audioPath);
     }
 
-    void playAudioDetached(std::string audioPath) {
-        if (audioPath.empty())
-            return;
-        try {
-            std::thread(playAudio, std::move(audioPath)).detach();
-        } catch (const std::system_error&) {
-            // Thread creation failed; a missing jingle is not worth failing the install over.
-        }
+    void playAudio(std::string audioPath) {
+        playAudioUntil(std::move(audioPath), nullptr);
     }
 
-    void playAudio(std::string audioPath) {
+    void playAudioUntil(std::string audioPath, const std::atomic<bool>* stop) {
         if (audioPath.empty())
             return;
         std::lock_guard<std::mutex> lock(gAudioPlaybackMutex);
@@ -427,7 +420,13 @@ namespace inst::util {
             return;
         }
 
-        while(Mix_Playing(channel) != 0) svcSleepThread(10'000'000);
+        while(Mix_Playing(channel) != 0) {
+            if (stop && stop->load(std::memory_order_acquire)) {
+                Mix_HaltChannel(channel);
+                break;
+            }
+            svcSleepThread(10'000'000);
+        }
 
         Mix_FreeChunk(sound);
         Mix_CloseAudio();

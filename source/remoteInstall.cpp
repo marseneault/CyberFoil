@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 #include <filesystem>
 #include <limits>
+#include <atomic>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -2855,7 +2856,8 @@ namespace remoteInstStuff {
                 std::string audioPath = "romfs:/audio/bark.wav";
                 if (!inst::config::soundEnabled) audioPath = "";
                 if (std::filesystem::exists(inst::config::appDir + "/bark.wav")) audioPath = inst::config::appDir + "/bark.wav";
-                inst::util::playAudioDetached(audioPath);
+                std::atomic<bool> stopAudio{false};
+                std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
                 std::string lowerError = errorText;
                 std::transform(lowerError.begin(), lowerError.end(), lowerError.begin(), [](unsigned char c) { return std::tolower(c); });
                 const bool googleApiKeyRequired = currentGoogleDriveWithoutApiKey &&
@@ -2872,6 +2874,8 @@ namespace remoteInstStuff {
                     ? userMessage
                     : userMessage + "\n\nIndex source: " + currentIndexSourceUrl;
                 inst::ui::mainApp->CreateShowDialog("inst.info_page.failed"_lang + failedName + "!", messageWithSource, {"common.ok"_lang}, true);
+                stopAudio.store(true, std::memory_order_release);
+                audioThread.join();
             }
             nspInstalled = false;
         }
@@ -2891,12 +2895,16 @@ namespace remoteInstStuff {
             std::string audioPath = "romfs:/audio/success.wav";
             if (!inst::config::soundEnabled) audioPath = "";
             if (std::filesystem::exists(inst::config::appDir + "/success.wav")) audioPath = inst::config::appDir + "/success.wav";
-            // Do not hold the install worker (and the UI) until the 4.7 s jingle finishes.
-            inst::util::playAudioDetached(audioPath);
+            // Cut the 4.7 s jingle when the dialog closes instead of holding the UI until it ends.
+            // (Never detach: libnx's threadExit aborts with 2345-0008 for detached std::threads.)
+            std::atomic<bool> stopAudio{false};
+            std::thread audioThread(inst::util::playAudioUntil, audioPath, &stopAudio);
             if (completedCount > 1)
                 inst::ui::mainApp->CreateShowDialog(std::to_string(completedCount) + "inst.info_page.desc0"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
             else
                 inst::ui::mainApp->CreateShowDialog(currentName + "inst.info_page.desc1"_lang, "inst.info_page.complete"_lang, {"common.ok"_lang}, true);
+            stopAudio.store(true, std::memory_order_release);
+            audioThread.join();
         }
 
         LOG_DEBUG("Done");

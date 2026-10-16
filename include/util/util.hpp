@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 
@@ -25,7 +26,8 @@ namespace inst::util {
     bool usbIsConnected();
     void primeNavigationClickAudio();
     void playAudio(std::string audioPath);
-    void playAudioDetached(std::string audioPath);
+    // Like playAudio, but returns early (halting playback) once *stop becomes true.
+    void playAudioUntil(std::string audioPath, const std::atomic<bool>* stop);
     void playNavigationClick();
     void playNavigationClickIfNeeded(std::uint64_t buttonsDown);
     std::vector<std::string> checkForAppUpdate();
