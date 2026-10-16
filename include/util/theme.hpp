@@ -19,6 +19,9 @@ namespace inst::theme {
     pu::ui::Color Palette(const std::string& fallbackHex);
     std::string Asset(const std::string& defaultPath);
     void ApplyBackground(pu::ui::Layout& layout, bool oledMode, const std::string& appDir);
+    // Scroll a menu by one visible page (direction > 0 = down), keeping the cursor on the
+    // same screen row, with a single re-render. Returns false when already at the edge.
+    bool PageMenu(pu::ui::elm::Menu& menu, int direction);
 
     // Apply focus text colors without modifying the bundled Plutonium library.
     class Menu : public pu::ui::elm::Menu {

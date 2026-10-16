@@ -9,7 +9,58 @@
 #include "util/error.hpp"
 #include "util/json.hpp"
 
+namespace {
+    // Plutonium keeps the view offset private and offers no paging API. An explicit
+    // template instantiation may name private members ([temp.spec]), which lets us reach
+    // them without modifying the bundled library.
+    template <typename Tag, typename Tag::type Member>
+    struct PrivateAccess {
+        friend typename Tag::type Get(Tag) { return Member; }
+    };
+    struct MenuFirstVisible {
+        using type = s32 pu::ui::elm::Menu::*;
+        friend type Get(MenuFirstVisible);
+    };
+    struct MenuSelected {
+        using type = s32 pu::ui::elm::Menu::*;
+        friend type Get(MenuSelected);
+    };
+    struct MenuReloadRenders {
+        using type = void (pu::ui::elm::Menu::*)();
+        friend type Get(MenuReloadRenders);
+    };
+    template struct PrivateAccess<MenuFirstVisible, &pu::ui::elm::Menu::fisel>;
+    template struct PrivateAccess<MenuSelected, &pu::ui::elm::Menu::isel>;
+    template struct PrivateAccess<MenuReloadRenders, &pu::ui::elm::Menu::ReloadItemRenders>;
+}
+
 namespace inst::theme {
+    bool PageMenu(pu::ui::elm::Menu& menu, int direction) {
+        const s32 count = static_cast<s32>(menu.GetItems().size());
+        if (count == 0 || direction == 0)
+            return false;
+        const s32 pageSize = std::max<s32>(1, menu.GetNumberOfItemsToShow());
+        const s32 maxTop = std::max<s32>(0, count - pageSize);
+        s32& top = menu.*Get(MenuFirstVisible{});
+        s32& selected = menu.*Get(MenuSelected{});
+        const s32 oldTop = std::clamp<s32>(top, 0, maxTop);
+        const s32 oldSelected = std::clamp<s32>(selected, 0, count - 1);
+        const s32 newTop = std::clamp<s32>(oldTop + (direction > 0 ? pageSize : -pageSize), 0, maxTop);
+        s32 newSelected = oldSelected + (newTop - oldTop);
+        if (newTop == oldTop)
+            newSelected = direction > 0 ? count - 1 : 0; // Last page: go to the edge item.
+        newSelected = std::clamp<s32>(newSelected, 0, count - 1);
+        if (newTop == oldTop && newSelected == oldSelected)
+            return false;
+        // SetSelectedIndex resets the focus animation; then pin the view where we want it.
+        menu.SetSelectedIndex(newSelected);
+        if (top != newTop) {
+            top = newTop;
+            (menu.*Get(MenuReloadRenders{}))();
+        }
+        return true;
+    }
+
     namespace {
         constexpr const char* kImagePrefix = "romfs:/images/";
         std::unordered_map<std::string, pu::ui::Color> g_colors;
@@ -215,7 +266,14 @@ namespace inst::theme {
                     focusedItem = item;
                     item->SetColor(selectedColor);
                     // Rebuild text textures once per focus change, not on every frame.
+                    // SetSelectedIndex also moves the view; keep it where scrolling put it.
+                    s32& top = this->*Get(MenuFirstVisible{});
+                    const s32 keepTop = top;
                     pu::ui::elm::Menu::SetSelectedIndex(index);
+                    if (top != keepTop) {
+                        top = keepTop;
+                        (this->*Get(MenuReloadRenders{}))();
+                    }
                 }
             }
         }

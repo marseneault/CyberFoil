@@ -44,8 +44,10 @@ namespace {
     constexpr int kListMarqueeStartDelayMs = 2000;
     constexpr int kListMarqueeEndPauseMs = 260;
     constexpr int kListMarqueeFadeDurationMs = 260;
-    constexpr u64 kListPageHoldDelayMs = 400;
-    constexpr u64 kListPageRepeatMs = 150;
+    constexpr u64 kListPageHoldDelayMs = 300;
+    constexpr u64 kListPageRepeatMs = 120;
+    constexpr u64 kListPageFastAfterMs = 1500;
+    constexpr u64 kListPageFastRepeatMs = 50;
     constexpr int kListMarqueeSpeedPxPerSec = 72;
     constexpr int kListMarqueePhasePause = 0;
     constexpr int kListMarqueePhaseScroll = 1;
@@ -1628,21 +1630,9 @@ namespace inst::ui {
         }
     }
 
-    void remoteInstPage::stepListSelection(int direction, int steps, bool playClick)
+    void remoteInstPage::pageListSelection(int direction, bool playClick)
     {
-        // Step one row at a time so the view scrolls contiguously: Menu::SetSelectedIndex
-        // would jump the view to the target and skip the rows between.
-        const int maxIndex = static_cast<int>(this->menu->GetItems().size()) - 1;
-        const u64 key = direction > 0 ? HidNpadButton_AnyDown : HidNpadButton_AnyUp;
-        bool moved = false;
-        for (int i = 0; i < steps; i++) {
-            const int current = this->menu->GetSelectedIndex();
-            if ((direction > 0 && current >= maxIndex) || (direction < 0 && current <= 0))
-                break;
-            this->menu->OnInput(key, 0, 0, pu::ui::Touch::Empty);
-            moved = true;
-        }
-        if (moved && playClick)
+        if (inst::theme::PageMenu(*this->menu, direction) && playClick)
             inst::util::playNavigationClick();
     }
 
@@ -1658,22 +1648,23 @@ namespace inst::ui {
         }
 
         const int direction = heldRight ? 1 : -1;
-        const int pageSize = std::max<int>(1, this->menu->GetNumberOfItemsToShow());
         const u64 now = armGetSystemTick();
         if (direction != this->pageHoldDirection || (Down & (HidNpadButton_Left | HidNpadButton_Right)) != 0) {
             this->pageHoldDirection = direction;
             this->pageHoldStartTick = now;
             this->pageLastHoldTick = now;
             // The initial press already clicked via playNavigationClickIfNeeded.
-            this->stepListSelection(direction, pageSize, false);
+            this->pageListSelection(direction, false);
             return;
         }
 
         const u64 freq = armGetSystemTickFreq();
         const u64 delayTicks = (freq * kListPageHoldDelayMs) / 1000;
-        const u64 repeatTicks = (freq * kListPageRepeatMs) / 1000;
-        if (now - this->pageHoldStartTick >= delayTicks && now - this->pageLastHoldTick >= repeatTicks) {
-            this->stepListSelection(direction, pageSize, true);
+        const u64 heldTicks = now - this->pageHoldStartTick;
+        const u64 repeatMs = heldTicks >= (freq * kListPageFastAfterMs) / 1000 ? kListPageFastRepeatMs : kListPageRepeatMs;
+        const u64 repeatTicks = (freq * repeatMs) / 1000;
+        if (heldTicks >= delayTicks && now - this->pageLastHoldTick >= repeatTicks) {
+            this->pageListSelection(direction, true);
             this->pageLastHoldTick = now;
         }
     }

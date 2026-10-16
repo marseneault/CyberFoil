@@ -210,7 +210,7 @@ namespace inst::ui {
             std::string getAllSortModeLabel() const;
             const char* getBrowseSortLabel() const;
             void applyBrowseSort();
-            void stepListSelection(int direction, int steps, bool playClick);
+            void pageListSelection(int direction, bool playClick);
             void handleListPageInput(u64 Down, u64 Held);
             void openSearchDialog();
             void openSortDialog();
