@@ -405,6 +405,10 @@ namespace inst::ui {
         if (render) mainApp->CallForRender();
     }
 
+    // A joinable std::thread destroyed at exit calls std::terminate: the DB update
+    // left g_installDimThread running, and CyberFoil crashed on every later exit.
+    void instPage::endInstallScreenSession() { StopInstallDimSession(); }
+
     void instPage::requestInstallCancel() { g_installCancelRequested.store(true); }
     bool instPage::isInstallCancelRequested() { return g_installCancelRequested.load(); }
     void instPage::clearInstallCancel() { g_installCancelRequested.store(false); }

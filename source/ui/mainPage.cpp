@@ -244,6 +244,7 @@ namespace inst::ui {
                                 inst::ui::instPage::setInstInfoText(stage);
                                 inst::ui::instPage::setInstBarPerc(percent);
                             });
+                        inst::ui::instPage::endInstallScreenSession();
                         mainApp->LoadLayout(mainApp->mainPage);
                         if (!apply.success) {
                             mainApp->CreateShowDialog("Offline DB update", "Update failed:\n" + apply.error, {"common.ok"_lang}, true);

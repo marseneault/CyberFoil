@@ -60,6 +60,10 @@ namespace inst::ui {
             static void clearInstallIcon();
             static void loadMainMenu();
             static void loadInstallScreen(bool render = true);
+            // Ends what loadInstallScreen started (screen-dim thread, auto-sleep, backlight)
+            // for callers that borrow the install screen without a real install, such as
+            // the offline DB update. Safe to call when nothing is active.
+            static void endInstallScreenSession();
             static void requestInstallCancel();
             static bool isInstallCancelRequested();
             static void clearInstallCancel();

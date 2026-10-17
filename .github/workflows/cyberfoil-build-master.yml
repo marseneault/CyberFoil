@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - 'debug/**'
   pull_request:
     branches:
       - master
@@ -69,7 +70,9 @@ jobs:
           set -euo pipefail
           start_ts=$(date +%s)
           dkp-pacman -S --noconfirm --needed switch-ntfs-3g switch-lwext4
-          make -j"$(nproc)" RELEASE=1
+          # debug/* branches build with the SD-card debug log (tinfoil_debug.log).
+          if [[ "${GITHUB_REF_NAME}" == debug/* ]]; then extra="DEBUG=1"; else extra=""; fi
+          make -j"$(nproc)" RELEASE=1 ${extra}
 
           end_ts=$(date +%s)
           duration=$((end_ts - start_ts))

@@ -1550,6 +1550,7 @@ namespace inst::ui {
                             inst::ui::instPage::setInstInfoText(stage);
                             inst::ui::instPage::setInstBarPerc(percent);
                         });
+                    inst::ui::instPage::endInstallScreenSession();
                     mainApp->LoadLayout(mainApp->optionspage);
 
                     if (!apply.success) {

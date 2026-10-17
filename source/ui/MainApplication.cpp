@@ -142,6 +142,9 @@ namespace inst::ui {
             this->optionspage->stopDiscoveryWorker();
         if (this->remoteinstPage)
             this->remoteinstPage->stopIconDownloadWorker();
+        // Safety net: any path that showed the install screen and never finished it
+        // would otherwise leave a joinable thread to std::terminate at exit.
+        instPage::endInstallScreenSession();
         pu::ui::Application::Close();
     }
 
