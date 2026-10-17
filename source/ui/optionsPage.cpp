@@ -555,11 +555,8 @@ namespace inst::ui {
             while (true) {
                 int choice = mainApp->CreateShowDialog(
                     "CyberFoil " + version + " is out",
-                    "This is a custom fork build (" + inst::config::appVersion + " + patches).
-"
-                    "Installing the official release would remove the fork's changes.
-
-"
+                    "This is a custom fork build (" + inst::config::appVersion + " + patches).\n"
+                    "Installing the official release would remove the fork's changes.\n\n"
                     "Merge " + version + " into the fork and rebuild instead.",
                     {"View Changelog", "common.ok"_lang},
                     true);
