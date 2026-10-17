@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 #include <curl/curl.h>
 #include <filesystem>
 #include <limits>
@@ -1156,16 +1157,44 @@ namespace {
         return baseTitleId;
     }
 
+    // "Game [0100...000][v0].nsp" -> "Game". Used for a base game the offline DB has no
+    // name for yet (a brand-new release), so it does not show its raw file name.
+    std::string StripFileNameTags(const std::string& name)
+    {
+        std::string out = name;
+        static const char* kExtensions[] = {".nsp", ".nsz", ".xci", ".xcz"};
+        for (const char* ext : kExtensions) {
+            const std::size_t len = std::strlen(ext);
+            if (out.size() > len && strcasecmp(out.c_str() + out.size() - len, ext) == 0) {
+                out.resize(out.size() - len);
+                break;
+            }
+        }
+        while (true) {
+            out = TrimAscii(out);
+            if (out.empty() || out.back() != ']')
+                break;
+            const auto open = out.rfind('[');
+            if (open == std::string::npos)
+                break;
+            out.resize(open);
+        }
+        return out.empty() ? name : out;
+    }
+
     void ApplyOfflineDataToItem(remoteInstStuff::RemoteItem& item, bool hasExplicitName)
     {
         const std::uint64_t lookupTitleId = GetOfflineLookupTitleId(item);
         if (lookupTitleId == 0)
             return;
 
+        bool namedFromDb = false;
         inst::offline::TitleMetadata meta;
         if (inst::offline::TryGetMetadata(lookupTitleId, meta)) {
-            if ((!hasExplicitName || item.name.empty()) && !meta.name.empty())
+            if ((!hasExplicitName || item.name.empty()) && !meta.name.empty()) {
                 item.name = meta.name;
+                namedFromDb = true;
+            }
             if (item.size == 0 && meta.hasSize)
                 item.size = meta.size;
             if (!item.hasAppVersion && meta.hasVersion) {
@@ -1178,6 +1207,8 @@ namespace {
             }
         }
 
+        if (!namedFromDb && !hasExplicitName && item.appType == NcmContentMetaType_Application)
+            item.name = StripFileNameTags(item.name);
     }
 
     std::vector<remoteInstStuff::RemoteSection> ParseRemoteSectionsBody(const std::string& body, const std::string& baseUrl, std::string& error)
