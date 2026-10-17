@@ -1706,14 +1706,14 @@ namespace remoteInstStuff {
             if (!seenItemUrls.insert(fullUrl).second)
                 return false;
 
+            const std::string fileName = !fragment.empty() ? DecodeUrlSegment(fragment)
+                                                           : inst::util::formatUrlString(fullUrl);
             std::string name;
             if (entry.is_object() && entry.contains("name") && entry["name"].is_string() &&
                 !TrimAscii(entry["name"].get<std::string>()).empty()) {
                 name = TrimAscii(entry["name"].get<std::string>());
-            } else if (!fragment.empty()) {
-                name = DecodeUrlSegment(fragment);
             } else {
-                name = inst::util::formatUrlString(fullUrl);
+                name = fileName;
             }
             if (name.empty())
                 return false;
@@ -1726,7 +1726,10 @@ namespace remoteInstStuff {
             item.size = size;
             item.googleDriveWithoutApiKey = (urlPath.rfind("gdrive:", 0) == 0 && googleApiKey.empty()) ||
                 IsGoogleDriveApiUrlWithoutKey(fullUrl);
-            ApplyLegacyMetadataFromName(name, item);
+            // Title id, type and version come from the [..] tags of the FILE name, so an
+            // index can send a clean display "name" ("Unicorn Overlord") without losing
+            // them. Without an explicit name the two are the same string.
+            ApplyLegacyMetadataFromName(fileName.empty() ? name : fileName, item);
 
             std::uint32_t releaseDate = 0;
             if (entry.is_object() && TryParseReleaseDate(entry, releaseDate)) {
