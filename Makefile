@@ -218,6 +218,15 @@ all: $(BUILD)
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
+	# Our fork's fixes to the Plutonium submodule live in patches/plutonium (applied once, idempotent).
+	@for p in $(sort $(wildcard $(CURDIR)/patches/plutonium/*.patch)); do \
+		if git -c safe.directory='*' -C $(PLUTONIUM_DIR) apply --reverse --check "$$p" >/dev/null 2>&1; then \
+			echo "Plutonium patch already applied: $$(basename $$p)"; \
+		else \
+			echo "Applying Plutonium patch: $$(basename $$p)"; \
+			git -c safe.directory='*' -C $(PLUTONIUM_DIR) apply "$$p" || exit 1; \
+		fi; \
+	done
 	#comment this out if you are hacking on the code or compilation will take forever
 	$(MAKE) --no-print-directory -C $(PLUTONIUM_DIR) -f Makefile lib
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile

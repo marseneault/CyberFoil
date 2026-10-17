@@ -1,0 +1,118 @@
+diff --git a/Plutonium/Include/pu/ui/elm/elm_Menu.hpp b/Plutonium/Include/pu/ui/elm/elm_Menu.hpp
+index 45184eb..64222a1 100644
+--- a/Plutonium/Include/pu/ui/elm/elm_Menu.hpp
++++ b/Plutonium/Include/pu/ui/elm/elm_Menu.hpp
+@@ -106,5 +106,22 @@ namespace pu::ui::elm
+             render::NativeFont meme;
+             std::vector<render::NativeTexture> loadednames;
+             std::vector<render::NativeTexture> loadedicons;
++            // What each loaded row was rendered from, so ReloadItemRenders can reuse unchanged rows.
++            struct LoadedRenderKey
++            {
++                std::string name;
++                std::string icon;
++                bool hasicon;
++                u8 r;
++                u8 g;
++                u8 b;
++                u8 a;
++                bool operator==(const LoadedRenderKey &Other) const
++                {
++                    return (hasicon == Other.hasicon) && (r == Other.r) && (g == Other.g) && (b == Other.b) && (a == Other.a) && (name == Other.name) && (icon == Other.icon);
++                }
++            };
++            std::vector<LoadedRenderKey> loadedkeys;
++            void DeleteItemRenders();
+     };
+ }
+\ No newline at end of file
+diff --git a/Plutonium/Source/pu/ui/elm/elm_Menu.cpp b/Plutonium/Source/pu/ui/elm/elm_Menu.cpp
+index d701b23..b49622a 100755
+--- a/Plutonium/Source/pu/ui/elm/elm_Menu.cpp
++++ b/Plutonium/Source/pu/ui/elm/elm_Menu.cpp
+@@ -1,4 +1,5 @@
+ #include <pu/ui/elm/elm_Menu.hpp>
++#include <algorithm>
+ 
+ namespace pu::ui::elm
+ {
+@@ -199,8 +200,7 @@ namespace pu::ui::elm
+     void Menu::ClearItems()
+     {
+         this->itms.clear();
+-        this->loadednames.clear();
+-        this->loadedicons.clear();
++        this->DeleteItemRenders();
+     }
+ 
+     void Menu::SetCooldownEnabled(bool Cooldown)
+@@ -502,27 +502,60 @@ namespace pu::ui::elm
+         }
+     }
+     
+-    void Menu::ReloadItemRenders()
++    void Menu::DeleteItemRenders()
+     {
+         for(u32 i = 0; i < this->loadednames.size(); i++) render::DeleteTexture(this->loadednames[i]);
+         for(u32 i = 0; i < this->loadedicons.size(); i++) render::DeleteTexture(this->loadedicons[i]);
+         this->loadednames.clear();
+         this->loadedicons.clear();
++        this->loadedkeys.clear();
++    }
++
++    void Menu::ReloadItemRenders()
++    {
++        // Scrolling by one row keeps every other visible row, so reuse the textures of rows whose
++        // name, colour and icon are unchanged instead of re-rendering text and reloading icons.
++        std::vector<render::NativeTexture> oldnames;
++        std::vector<render::NativeTexture> oldicons;
++        std::vector<LoadedRenderKey> oldkeys;
++        oldnames.swap(this->loadednames);
++        oldicons.swap(this->loadedicons);
++        oldkeys.swap(this->loadedkeys);
++        const std::size_t reusable = std::min(oldkeys.size(), std::min(oldnames.size(), oldicons.size()));
+         s32 its = this->ishow;
+         if(its > this->itms.size()) its = this->itms.size();
+         if((its + this->fisel) > this->itms.size()) its = this->itms.size() - this->fisel;
+         for(s32 i = this->fisel; i < (its + this->fisel); i++)
+         {
+-            auto strname = this->itms[i]->GetName();
+-            auto tex = render::RenderText(this->font, this->meme, strname, this->itms[i]->GetColor());
+-            this->loadednames.push_back(tex);
+-            if(this->itms[i]->HasIcon())
++            auto &itm = this->itms[i];
++            const auto clr = itm->GetColor();
++            LoadedRenderKey key = { itm->GetName(), std::string(), itm->HasIcon(), clr.R, clr.G, clr.B, clr.A };
++            if(key.hasicon) key.icon = itm->GetIcon();
++            render::NativeTexture nametex = NULL;
++            render::NativeTexture icontex = NULL;
++            bool reused = false;
++            for(std::size_t j = 0; j < reusable; j++)
++            {
++                if((oldnames[j] != NULL) && (oldkeys[j] == key))
++                {
++                    nametex = oldnames[j];
++                    icontex = oldicons[j];
++                    oldnames[j] = NULL;
++                    oldicons[j] = NULL;
++                    reused = true;
++                    break;
++                }
++            }
++            if(!reused)
+             {
+-                auto stricon = this->itms[i]->GetIcon();
+-                auto icontex = render::LoadImage(stricon);
+-                this->loadedicons.push_back(icontex);
++                nametex = render::RenderText(this->font, this->meme, key.name, clr);
++                if(key.hasicon) icontex = render::LoadImage(key.icon);
+             }
+-            else this->loadedicons.push_back(NULL);
++            this->loadednames.push_back(nametex);
++            this->loadedicons.push_back(icontex);
++            this->loadedkeys.push_back(std::move(key));
+         }
++        for(u32 i = 0; i < oldnames.size(); i++) render::DeleteTexture(oldnames[i]);
++        for(u32 i = 0; i < oldicons.size(); i++) render::DeleteTexture(oldicons[i]);
+     }
+ }
