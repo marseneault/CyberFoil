@@ -367,6 +367,37 @@ namespace inst::offline::dbupdate
             return true;
         }
 
+        // True when the installed copy of `name` is the file `remote` describes: the local
+        // manifest records the same sha256 and size, and the file on SD has that size.
+        // Lets an update skip re-downloading an unchanged pack (icons.pack is 126 MB and
+        // often identical between DB versions).
+        bool InstalledPackMatches(const std::string& name, const ManifestFile& remote)
+        {
+            const std::string packPath = OfflineDbDir() + "/" + name;
+            std::error_code ec;
+            if (remote.sha256.empty() || !FileExists(packPath))
+                return false;
+            const auto onDisk = std::filesystem::file_size(packPath, ec);
+            if (ec || onDisk != remote.size)
+                return false;
+            std::ifstream in(LocalManifestPath(), std::ios::binary);
+            if (!in)
+                return false;
+            auto lower = [](std::string text) {
+                std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+                return text;
+            };
+            try {
+                nlohmann::json root;
+                in >> root;
+                const auto& file = root.at("files").at(name);
+                return lower(file.at("sha256").get<std::string>()) == lower(remote.sha256) &&
+                    file.at("size").get<std::uint64_t>() == remote.size;
+            } catch (...) {
+                return false;
+            }
+        }
+
         bool ReadLocalManifestVersion(const std::string& path, std::string& outVersion)
         {
             std::ifstream in(path, std::ios::binary);
@@ -899,7 +930,11 @@ namespace inst::offline::dbupdate
         }
 
         OfflineDbTrace("ApplyUpdate progress: downloading icons.pack");
-        if (!DownloadAndVerify(manifest.iconsPack, iconsTemp, result.error, progress,
+        const bool keepIcons = InstalledPackMatches("icons.pack", manifest.iconsPack);
+        if (keepIcons) {
+            LOG_DEBUG("Offline DB: icons.pack unchanged, keeping the installed copy\n");
+            ReportProgress(progress, "icons.pack unchanged", 70.0);
+        } else if (!DownloadAndVerify(manifest.iconsPack, iconsTemp, result.error, progress,
                 "Downloading icons.pack", 45.0, 70.0)) {
             RemoveIfExists(titlesTemp);
             OfflineDbTrace("ApplyUpdate fail: icons.pack %s", result.error.c_str());
@@ -957,7 +992,7 @@ namespace inst::offline::dbupdate
             return result;
         }
 
-        if (!CommitReplace(iconsState, result.error)) {
+        if (!keepIcons && !CommitReplace(iconsState, result.error)) {
             RollbackReplace(iconsState);
             RollbackReplace(titlesState);
             RemoveIfExists(manifestTemp);
