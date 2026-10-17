@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,6 +18,7 @@
 #include "util/config.hpp"
 #include "util/remote_connection.hpp"
 #include "util/curl.hpp"
+#include "util/error.hpp"
 #include "cheat_manager.hpp"
 #include "util/lang.hpp"
 #include "util/offline_title_db.hpp"
@@ -700,6 +702,67 @@ namespace {
         return std::string();
     }
 
+    constexpr const char* kNewItemPrefix = "[NEW] ";
+    constexpr const char* kSeenFileHeader = "cyberfoil-seen v1";
+
+    std::uint64_t HashSeenKey(const std::string& text)
+    {
+        // FNV-1a: stable across builds, unlike std::hash.
+        std::uint64_t hash = 14695981039346656037ULL;
+        for (unsigned char c : text) {
+            hash ^= c;
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
+
+    bool IsShopItemSection(const std::string& id)
+    {
+        return id != "installed" && id != "saves" && id != "save" && id != "cheats" && id != "cheat";
+    }
+
+    bool ReadSeenFile(const std::string& path, std::unordered_set<std::uint64_t>& out)
+    {
+        std::ifstream file(path);
+        if (!file)
+            return false;
+        std::string line;
+        if (!std::getline(file, line) || line != kSeenFileHeader)
+            return false;
+        while (std::getline(file, line)) {
+            if (line.empty())
+                continue;
+            char* end = nullptr;
+            const unsigned long long value = std::strtoull(line.c_str(), &end, 16);
+            if (end != line.c_str())
+                out.insert(static_cast<std::uint64_t>(value));
+        }
+        return true;
+    }
+
+    bool WriteSeenFile(const std::string& path, const std::unordered_set<std::uint64_t>& keys)
+    {
+        // Write then rename, so a crash mid-write cannot leave a truncated file that marks everything new.
+        const std::string tempPath = path + ".tmp";
+        {
+            std::ofstream file(tempPath, std::ios::trunc);
+            if (!file)
+                return false;
+            file << kSeenFileHeader << '\n';
+            char buffer[24];
+            for (const auto key : keys) {
+                std::snprintf(buffer, sizeof(buffer), "%016llx\n", static_cast<unsigned long long>(key));
+                file << buffer;
+            }
+            if (!file.good())
+                return false;
+        }
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        std::filesystem::rename(tempPath, path, ec);
+        return !ec;
+    }
+
     bool TryGetOfflineIconBaseId(const remoteInstStuff::RemoteItem& item, std::uint64_t& outBaseId)
     {
         return TryResolveBaseTitleId(item, outBaseId);
@@ -939,6 +1002,11 @@ namespace inst::ui {
     extern MainApplication *mainApp;
 
     remoteInstPage::remoteInstPage() : Layout::Layout() {
+        // Sort choices persist in config.json; ignore out-of-range values from a hand-edited file.
+        if (inst::config::remoteAllSortMode >= 0 && inst::config::remoteAllSortMode <= 3)
+            this->allSortMode = inst::config::remoteAllSortMode;
+        if (inst::config::remoteBrowseSortMode >= 0 && inst::config::remoteBrowseSortMode <= static_cast<int>(BrowseSortMode::NameAsc))
+            this->browseSortMode = static_cast<BrowseSortMode>(inst::config::remoteBrowseSortMode);
         inst::theme::ApplyBackground(*this, inst::config::oledMode, inst::config::appDir);
         const auto topColor = inst::theme::Color("header", inst::config::oledMode ? COLOR("#000000FF") : COLOR("#170909FF"));
         const auto infoColor = inst::theme::Color("panel", inst::config::oledMode ? COLOR("#000000FF") : COLOR("#17090980"));
@@ -1376,6 +1444,74 @@ namespace inst::ui {
         return this->remoteSections[this->selectedSectionIndex].items;
     }
 
+    void remoteInstPage::updateNewSinceLastVisit() {
+        this->newSinceLastVisit.clear();
+        this->newInAllSectionCount = 0;
+        const std::string storeKey = !inst::config::remoteProfileFile.empty() ? inst::config::remoteProfileFile : this->activeRemoteUrl;
+        if (storeKey.empty())
+            return;
+        char fileName[32];
+        std::snprintf(fileName, sizeof(fileName), "%016llx.txt", static_cast<unsigned long long>(HashSeenKey(storeKey)));
+        const std::string seenDir = inst::config::appDir + "/seen";
+        const std::string seenPath = seenDir + "/" + fileName;
+
+        if (storeKey != this->seenStoreKey) {
+            this->seenStoreKey = storeKey;
+            this->seenBaseline.clear();
+            this->seenBaselineFound = ReadSeenFile(seenPath, this->seenBaseline);
+            this->seenOnDisk = this->seenBaseline;
+        }
+
+        std::unordered_set<std::uint64_t> current;
+        for (const auto& section : this->remoteSections) {
+            if (!IsShopItemSection(section.id))
+                continue;
+            for (const auto& item : section.items) {
+                if (item.url.empty() || item.isCheat || !item.saveId.empty())
+                    continue;
+                const std::string identity = BuildItemIdentityKey(item);
+                if (!identity.empty())
+                    current.insert(HashSeenKey(identity));
+            }
+        }
+        if (current.empty())
+            return;
+
+        // First visit to this shop: everything becomes the baseline and nothing is "new".
+        if (this->seenBaselineFound) {
+            for (const auto key : current) {
+                if (this->seenBaseline.find(key) == this->seenBaseline.end())
+                    this->newSinceLastVisit.insert(key);
+            }
+        }
+        for (const auto& section : this->remoteSections) {
+            if (section.id != "all")
+                continue;
+            for (const auto& item : section.items) {
+                if ((!inst::config::remoteAllBaseOnly || IsBaseItem(item)) && this->isNewSinceLastVisit(item))
+                    this->newInAllSectionCount++;
+            }
+        }
+
+        const std::size_t before = this->seenOnDisk.size();
+        this->seenOnDisk.insert(current.begin(), current.end());
+        if (this->seenOnDisk.size() != before) {
+            std::error_code ec;
+            std::filesystem::create_directories(seenDir, ec);
+            // Not fatal: the markers for this session are already computed; the next visit just
+            // compares against the older file again.
+            if (!WriteSeenFile(seenPath, this->seenOnDisk))
+                LOG_DEBUG("Failed to write seen-items file %s\n", seenPath.c_str());
+        }
+    }
+
+    bool remoteInstPage::isNewSinceLastVisit(const remoteInstStuff::RemoteItem& item) const {
+        if (this->newSinceLastVisit.empty() || item.url.empty())
+            return false;
+        const std::string identity = BuildItemIdentityKey(item);
+        return !identity.empty() && this->newSinceLastVisit.count(HashSeenKey(identity)) != 0;
+    }
+
     void remoteInstPage::applyAllSectionSort() {
         if (this->remoteSections.empty())
             return;
@@ -1460,6 +1596,8 @@ namespace inst::ui {
             if (!rightInfo.empty())
                 rightInfo += " | ";
             rightInfo += "Sort: " + this->getAllSortModeLabel();
+            if (this->newInAllSectionCount > 0)
+                rightInfo += " | " + std::to_string(this->newInAllSectionCount) + " new";
         } else if (this->browseSortMode != BrowseSortMode::Default) {
             if (!rightInfo.empty())
                 rightInfo += " | ";
@@ -1748,6 +1886,10 @@ namespace inst::ui {
         if (!needsRedraw)
             return;
 
+        inst::config::remoteAllSortMode = this->allSortMode;
+        inst::config::remoteBrowseSortMode = static_cast<int>(this->browseSortMode);
+        inst::config::setConfig();
+
         this->remoteGridPage = -1;
         this->gridPage = -1;
         this->updateSectionText();
@@ -1781,9 +1923,9 @@ namespace inst::ui {
         return ClipSingleLineByMenuRender(normalized, 18, 1260, 26, nullptr);
     }
 
-    std::string remoteInstPage::buildListMenuLabel(const remoteInstStuff::RemoteItem& item)
+    std::string remoteInstPage::buildListMenuLabel(const remoteInstStuff::RemoteItem& item, const std::string& prefix)
     {
-        const std::string normalizedName = OverflowText::NormalizeSingleLineText(item.name);
+        const std::string normalizedName = prefix + OverflowText::NormalizeSingleLineText(item.name);
         if (item.isCheat) {
             std::string suffix = inst::cheats::IsInstalled(item.cheatTitleId, item.cheatBuildId) ? " [Installed]" : " [Remote]";
             return inst::util::shortenString(normalizedName, ComputeListNameLimit(suffix), true) + suffix;
@@ -1870,7 +2012,8 @@ namespace inst::ui {
         this->listPrevSelectedIndex = selectedIndex;
 
         const auto& item = this->visibleItems[static_cast<std::size_t>(selectedIndex)];
-        const std::string normalizedName = OverflowText::NormalizeSingleLineText(item.name);
+        const std::string normalizedName = (this->isNewSinceLastVisit(item) ? std::string(kNewItemPrefix) : std::string()) +
+            OverflowText::NormalizeSingleLineText(item.name);
         std::string sizeText = FormatSizeText(item.size);
         std::string suffix = sizeText.empty() ? "" : (" [" + sizeText + "]");
 
@@ -3371,17 +3514,19 @@ namespace inst::ui {
         const bool useFastListLabels = this->visibleItems.size() > 400;
         for (std::size_t i = 0; i < this->visibleItems.size(); i++) {
             const auto& item = this->visibleItems[i];
+            const bool isNew = this->isNewSinceLastVisit(item);
+            const std::string prefix = isNew ? kNewItemPrefix : "";
             std::string itm;
             if (useFastListLabels) {
-                itm = OverflowText::NormalizeSingleLineText(item.name);
+                itm = prefix + OverflowText::NormalizeSingleLineText(item.name);
                 std::string sizeText = FormatSizeText(item.size);
                 if (!sizeText.empty())
                     itm += " [" + sizeText + "]";
             } else {
-                itm = this->buildListMenuLabel(item);
+                itm = this->buildListMenuLabel(item, prefix);
             }
             auto entry = pu::ui::elm::MenuItem::New(itm);
-            entry->SetColor(COLOR("#FFFFFFFF"));
+            entry->SetColor(isNew ? COLOR("#FFD54FFF") : COLOR("#FFFFFFFF"));
             if (!installedSection && !saveSyncSection && !cheatsSection) {
                 entry->SetIcon(inst::theme::Asset("romfs:/images/icons/checkbox-blank-outline.png"));
                 if (!item.url.empty() && selectedUrls.find(item.url) != selectedUrls.end())
@@ -4171,6 +4316,7 @@ namespace inst::ui {
             }
         }
 
+        this->updateNewSinceLastVisit();
         updateLoadingProgress(98, "Preparing installed section...");
         this->ensureInstalledSectionPlaceholder();
         RemoteDlcTrace("after ensureInstalledSectionPlaceholder sections=%llu", static_cast<unsigned long long>(this->remoteSections.size()));

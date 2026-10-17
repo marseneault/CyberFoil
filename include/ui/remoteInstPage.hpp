@@ -77,6 +77,17 @@ namespace inst::ui {
             // Base title names survive snapshot rebuilds: each lookup reads ~144 KiB of control data.
             std::unordered_map<std::uint64_t, std::string> baseTitleNameCache;
             const std::string& getCachedBaseTitleName(std::uint64_t baseId);
+            // "New since last visit": shop items whose identity was not in this shop's seen file when
+            // it was first loaded this session. The baseline is kept for the whole session so the
+            // markers survive refreshes; the file on SD is the union of everything ever seen.
+            std::string seenStoreKey;
+            bool seenBaselineFound = false;
+            std::unordered_set<std::uint64_t> seenBaseline;
+            std::unordered_set<std::uint64_t> seenOnDisk;
+            std::unordered_set<std::uint64_t> newSinceLastVisit;
+            std::size_t newInAllSectionCount = 0;
+            void updateNewSinceLastVisit();
+            bool isNewSinceLastVisit(const remoteInstStuff::RemoteItem& item) const;
             bool nativeUpdatesSectionPresent = false;
             bool nativeDlcSectionPresent = false;
             bool saveSyncEnabled = false;
@@ -225,7 +236,7 @@ namespace inst::ui {
             void updateButtonsText();
             void setButtonsText(const std::string& text);
             void getListTextBounds(int& textX, int& textWidth) const;
-            std::string buildListMenuLabel(const remoteInstStuff::RemoteItem& item);
+            std::string buildListMenuLabel(const remoteInstStuff::RemoteItem& item, const std::string& prefix = std::string());
             void updateListMarquee(bool force);
             void buildInstalledSection();
             void buildLegacyOwnedSections();

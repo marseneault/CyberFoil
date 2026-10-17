@@ -40,6 +40,8 @@ namespace inst::config {
     bool remoteAllBaseOnly;
     bool remoteLegacyMode;
     bool remoteStartGridMode;
+    int remoteAllSortMode = 3;
+    int remoteBrowseSortMode = 0;
     bool offlineDbAutoCheckOnStartup;
     bool verboseInstallLogging;
 
@@ -930,6 +932,8 @@ namespace inst::config {
             {"remoteAllBaseOnly", remoteAllBaseOnly},
             {"remoteLegacyMode", remoteLegacyMode},
             {"remoteStartGridMode", remoteStartGridMode},
+            {"remoteAllSortMode", remoteAllSortMode},
+            {"remoteBrowseSortMode", remoteBrowseSortMode},
             {"offlineDbAutoCheckOnStartup", offlineDbAutoCheckOnStartup},
             {"verboseInstallLogging", verboseInstallLogging},
             {"remoteRememberSelection", false},
@@ -968,6 +972,8 @@ namespace inst::config {
         remoteAllBaseOnly = true;
         remoteLegacyMode = false;
         remoteStartGridMode = false;
+        remoteAllSortMode = 3; // Date New-Old
+        remoteBrowseSortMode = 0;
         offlineDbAutoCheckOnStartup = true;
         verboseInstallLogging = false;
         bool hasHttpUserAgentModeKey = false;
@@ -1010,6 +1016,8 @@ namespace inst::config {
             if (j.contains("remoteAllBaseOnly")) remoteAllBaseOnly = j["remoteAllBaseOnly"].get<bool>();
             if (j.contains("remoteLegacyMode")) remoteLegacyMode = j["remoteLegacyMode"].get<bool>();
             if (j.contains("remoteStartGridMode")) remoteStartGridMode = j["remoteStartGridMode"].get<bool>();
+            if (j.contains("remoteAllSortMode") && j["remoteAllSortMode"].is_number_integer()) remoteAllSortMode = j["remoteAllSortMode"].get<int>();
+            if (j.contains("remoteBrowseSortMode") && j["remoteBrowseSortMode"].is_number_integer()) remoteBrowseSortMode = j["remoteBrowseSortMode"].get<int>();
             if (j.contains("offlineDbAutoCheckOnStartup")) offlineDbAutoCheckOnStartup = j["offlineDbAutoCheckOnStartup"].get<bool>();
             if (j.contains("verboseInstallLogging")) verboseInstallLogging = j["verboseInstallLogging"].get<bool>();
 
@@ -1042,6 +1050,8 @@ namespace inst::config {
                 "remoteAllBaseOnly",
                 "remoteLegacyMode",
                 "remoteStartGridMode",
+                "remoteAllSortMode",
+                "remoteBrowseSortMode",
                 "offlineDbAutoCheckOnStartup",
                 "verboseInstallLogging"
             };

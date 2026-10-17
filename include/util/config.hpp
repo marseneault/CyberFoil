@@ -52,6 +52,8 @@ namespace inst::config {
     extern bool remoteAllBaseOnly;
     extern bool remoteLegacyMode;
     extern bool remoteStartGridMode;
+    extern int remoteAllSortMode;
+    extern int remoteBrowseSortMode;
     extern bool offlineDbAutoCheckOnStartup;
     extern bool verboseInstallLogging;
 
