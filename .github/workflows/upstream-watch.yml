@@ -1,0 +1,100 @@
+name: Watch upstream CyberFoil
+
+# Daily check of luketanti/CyberFoil: latest release tag and the state of PR #127.
+# The last seen values live in state.json on the `upstream-watch` branch. When either
+# changes, this run updates the state and then FAILS on purpose: GitHub emails the
+# repo owner about failed workflow runs, and that email is the notification.
+# A heartbeat commit once a month keeps GitHub from disabling the schedule
+# (it does that after 60 days without repository activity).
+
+on:
+  schedule:
+    - cron: '23 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out watch state
+        uses: actions/checkout@v4
+        with:
+          ref: upstream-watch
+
+      - name: Compare upstream with last seen state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM: luketanti/CyberFoil
+          WATCH_PR: '127'
+        run: |
+          set -euo pipefail
+          api() {
+            curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
+          }
+
+          release_json="$(api "repos/${UPSTREAM}/releases/latest")"
+          pr_json="$(api "repos/${UPSTREAM}/pulls/${WATCH_PR}")"
+
+          python3 - "$release_json" "$pr_json" <<'PY'
+          import json, os, sys, datetime
+
+          release = json.loads(sys.argv[1])
+          pr = json.loads(sys.argv[2])
+          now = {
+              "release_tag": release.get("tag_name") or "",
+              "release_url": release.get("html_url") or "",
+              "pr_state": "merged" if pr.get("merged") else (pr.get("state") or ""),
+              "pr_url": pr.get("html_url") or "",
+          }
+          if not now["release_tag"] or not now["pr_state"]:
+              sys.exit("Upstream API answered without a release tag or PR state; not touching the saved state.")
+
+          with open("state.json", encoding="utf-8") as f:
+              old = json.load(f)
+
+          changes = []
+          if now["release_tag"] != old.get("release_tag"):
+              changes.append(f"New upstream release: {old.get('release_tag') or '(none)'} -> {now['release_tag']} ({now['release_url']})")
+          if now["pr_state"] != old.get("pr_state"):
+              changes.append(f"PR #127 is now {now['pr_state']} (was {old.get('pr_state') or 'unknown'}) ({now['pr_url']})")
+
+          month = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")
+          heartbeat_due = old.get("heartbeat") != month
+          new_state = dict(now, heartbeat=month)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Upstream watch\n")
+              summary.write(f"- Latest release: {now['release_tag']}\n- PR #127: {now['pr_state']}\n")
+              for change in changes:
+                  summary.write(f"- **{change}**\n")
+
+          if changes or heartbeat_due:
+              with open("state.json", "w", encoding="utf-8") as f:
+                  json.dump(new_state, f, indent=2)
+                  f.write("\n")
+          with open("changes.txt", "w", encoding="utf-8") as f:
+              f.write("\n".join(changes))
+          PY
+
+          if ! git diff --quiet -- state.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -q -m "chore: upstream watch state $(date -u +%Y-%m-%d)" -- state.json
+            git push -q origin HEAD:upstream-watch
+          fi
+
+          if [ -s changes.txt ]; then
+            while IFS= read -r line; do echo "::error title=Upstream CyberFoil changed::${line}"; done < changes.txt
+            echo "Upstream changed - see the run summary. Merge it into the fork (see the fork notes)."
+            exit 1
+          fi
+          echo "No upstream change."
