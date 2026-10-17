@@ -547,42 +547,27 @@ namespace inst::ui {
     }
 
     void optionsPage::askToUpdate(std::vector<std::string> updateInfo) {
+            // Fork build (marseneault/CyberFoil): the official release asset would overwrite this
+            // build and drop the fork's patches, so only announce the release - never install it.
             const std::string version = updateInfo.empty() ? std::string() : updateInfo[0];
-            const std::string downloadUrl = updateInfo.size() > 1 ? updateInfo[1] : std::string();
             const std::string releaseNotes = updateInfo.size() > 2 ? updateInfo[2] : "No changelog available for this release.";
 
             while (true) {
                 int choice = mainApp->CreateShowDialog(
-                    "options.update.title"_lang,
-                    "options.update.desc0"_lang + version + "options.update.desc1"_lang,
-                    {"options.update.opt0"_lang, "View Changelog", "common.cancel"_lang},
-                    false);
+                    "CyberFoil " + version + " is out",
+                    "This is a custom fork build (" + inst::config::appVersion + " + patches).
+"
+                    "Installing the official release would remove the fork's changes.
 
-                if (choice == 1) {
+"
+                    "Merge " + version + " into the fork and rebuild instead.",
+                    {"View Changelog", "common.ok"_lang},
+                    true);
+
+                if (choice == 0) {
                     ShowPagedTextDialog("Changelog " + version, releaseNotes);
                     continue;
                 }
-
-                if (choice != 0)
-                    break;
-
-                inst::ui::instPage::loadInstallScreen();
-                inst::ui::instPage::setTopInstInfoText("options.update.top_info"_lang + version);
-                inst::ui::instPage::setInstBarPerc(0);
-                inst::ui::instPage::setInstInfoText("options.update.bot_info"_lang + version);
-                try {
-                    std::string downloadName = inst::config::appDir + "/temp_download.zip";
-                    inst::curl::downloadFile(downloadUrl, downloadName.c_str(), 0, true);
-                    romfsExit();
-                    inst::ui::instPage::setInstInfoText("options.update.bot_info2"_lang + version);
-                    inst::zip::extractFile(downloadName, "sdmc:/");
-                    std::filesystem::remove(downloadName);
-                    mainApp->CreateShowDialog("options.update.complete"_lang, "options.update.end_desc"_lang, {"common.ok"_lang}, false);
-                } catch (...) {
-                    mainApp->CreateShowDialog("options.update.failed"_lang, "options.update.end_desc"_lang, {"common.ok"_lang}, false);
-                }
-                mainApp->FadeOut();
-                mainApp->Close();
                 break;
             }
         return;
