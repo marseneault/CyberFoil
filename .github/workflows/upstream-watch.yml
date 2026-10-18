@@ -1,8 +1,7 @@
 name: Watch upstream CyberFoil
 
-# Daily check of luketanti/CyberFoil: latest release tag and the state of PR #127.
-# The last seen values live in state.json on the `upstream-watch` branch. When either
-# changes, this run updates the state and then FAILS on purpose: GitHub emails the
+# Daily check of luketanti/CyberFoil's latest release tag. The last seen value lives in
+# state.json on the `upstream-watch` branch. When it changes, this run updates the state and then FAILS on purpose: GitHub emails the
 # repo owner about failed workflow runs, and that email is the notification.
 # A heartbeat commit once a month keeps GitHub from disabling the schedule
 # (it does that after 60 days without repository activity).
@@ -33,7 +32,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM: luketanti/CyberFoil
-          WATCH_PR: '127'
         run: |
           set -euo pipefail
           api() {
@@ -42,21 +40,17 @@ jobs:
           }
 
           release_json="$(api "repos/${UPSTREAM}/releases/latest")"
-          pr_json="$(api "repos/${UPSTREAM}/pulls/${WATCH_PR}")"
 
-          python3 - "$release_json" "$pr_json" <<'PY'
+          python3 - "$release_json" <<'PY'
           import json, os, sys, datetime
 
           release = json.loads(sys.argv[1])
-          pr = json.loads(sys.argv[2])
           now = {
               "release_tag": release.get("tag_name") or "",
               "release_url": release.get("html_url") or "",
-              "pr_state": "merged" if pr.get("merged") else (pr.get("state") or ""),
-              "pr_url": pr.get("html_url") or "",
           }
-          if not now["release_tag"] or not now["pr_state"]:
-              sys.exit("Upstream API answered without a release tag or PR state; not touching the saved state.")
+          if not now["release_tag"]:
+              sys.exit("Upstream API answered without a release tag; not touching the saved state.")
 
           with open("state.json", encoding="utf-8") as f:
               old = json.load(f)
@@ -64,8 +58,6 @@ jobs:
           changes = []
           if now["release_tag"] != old.get("release_tag"):
               changes.append(f"New upstream release: {old.get('release_tag') or '(none)'} -> {now['release_tag']} ({now['release_url']})")
-          if now["pr_state"] != old.get("pr_state"):
-              changes.append(f"PR #127 is now {now['pr_state']} (was {old.get('pr_state') or 'unknown'}) ({now['pr_url']})")
 
           month = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")
           heartbeat_due = old.get("heartbeat") != month
@@ -73,7 +65,7 @@ jobs:
 
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("## Upstream watch\n")
-              summary.write(f"- Latest release: {now['release_tag']}\n- PR #127: {now['pr_state']}\n")
+              summary.write(f"- Latest release: {now['release_tag']}\n")
               for change in changes:
                   summary.write(f"- **{change}**\n")
 
