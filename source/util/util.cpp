@@ -115,7 +115,17 @@ namespace inst::util {
         inst::config::parseConfig();
         primeNavigationClickAudio();
 
-        socketInitializeDefault();
+        // Larger TCP windows than the libnx defaults (64 KiB rx, 256 KiB max) so
+        // shop downloads are not window-limited on a high-latency Wi-Fi link.
+        // Falls back to the defaults if the bigger transfer memory is refused.
+        SocketInitConfig socketConfig = *socketGetDefaultInitConfig();
+        socketConfig.tcp_tx_buf_size = 0x20000;
+        socketConfig.tcp_rx_buf_size = 0x80000;
+        socketConfig.tcp_tx_buf_max_size = 0x40000;
+        socketConfig.tcp_rx_buf_max_size = 0x300000;
+        socketConfig.sb_efficiency = 6;
+        if (R_FAILED(socketInitialize(&socketConfig)))
+            socketInitializeDefault();
         #ifdef __DEBUG__
             nxlinkStdio();
         #endif
